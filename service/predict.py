@@ -9,6 +9,5 @@ def prepare_features(ride):
 def predict(model, uri, data):
     mlflow.set_tracking_uri(uri)
     model_input = prepare_features(data)
-    print(model_input)
     prediction = model.predict(model_input)
     return float(prediction[0])

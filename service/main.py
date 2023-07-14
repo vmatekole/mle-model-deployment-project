@@ -22,7 +22,7 @@ MODEL = mlflow.pyfunc.load_model(model_uri)
 def get_taxi_predictions(taxi_rides: list[TaxiRide]) -> pd.DataFrame:
     predictions = []
     for taxi_ride in taxi_rides:
-        prediction_duration = predict("lr-ride-duration", taxi_ride)
+        prediction_duration = predict(MODEL, model_uri, taxi_ride)
         prediction = TaxiRidePrediction(
             **taxi_ride.dict(), predicted_duration=prediction_duration)
         predictions.append(prediction)
@@ -39,7 +39,7 @@ def index():
 @app.post("/predict", response_model=TaxiRidePrediction)
 def predict_duration(data: TaxiRide):
     
-    prediction = predict(MODEL,MLFLOW_TRACKING_URI,data)
+    prediction = predict(MODEL, MLFLOW_TRACKING_URI,data)
     return TaxiRidePrediction(**data.dict(), predicted_duration=prediction)
 
 
@@ -51,7 +51,7 @@ def predict_durations(data: list[TaxiRide]):
 
 @app.post("/predict_bq")
 def predict_durations_to_bigquery(data: list[TaxiRide]):
-    df_predictions = get_taxi_predictions(data)
+    df_predictions = get_taxi_predictions(MODEL, data)
     df_predictions.to_gbq('taxi_predictions.predictions',
                           'composed-hold-390914', if_exists='append')
     return {"message": "Successfully uploaded"}

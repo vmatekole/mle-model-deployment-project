@@ -1,23 +1,18 @@
 import os
-from dotenv import load_dotenv
-
-import pandas as pd
-
-import mlflow
-
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
-
-from sklearn.pipeline import Pipeline, make_pipeline
-
+import traceback
 from typing import Tuple
 
+import mlflow
+import optuna
+import pandas as pd
+from dotenv import load_dotenv
 from rich import print
 from rich.console import Console
-
-import optuna
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline, make_pipeline
 
 YEAR = 2021
 MONTH = 1
@@ -61,10 +56,10 @@ def preprocess(df_raw) -> pd.DataFrame:
     return df
 
 
-def train(model, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame) -> None:
+def train(model, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame) -> float:
 
     X_train = X_train.to_dict(orient="records")
-    X_test = X_test.to_dict(orient="records")    
+    X_test = X_test.to_dict(orient="records")
 
     # Setup the MLflow experiment
     # exp_name = 'yellow-taxi-trip-duration'
@@ -90,13 +85,11 @@ def train(model, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFr
     pipeline.fit(X_train, y_train)
 
     y_pred = pipeline.predict(X_test)
-
     rmse = mean_squared_error(y_test, y_pred, squared=False)
-
     MLFLOW.log_metric('rmse', rmse)
 
     MLFLOW.sklearn.log_model(pipeline, "model")
-
+    return rmse
 
 def init():
     load_dotenv()
@@ -106,7 +99,7 @@ def init():
     MLFLOW.set_tracking_uri(MLFLOW_TRACKING_URI)
 
     SA_KEY = os.getenv("SA_KEY")
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SA_KEY  
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SA_KEY
 
 
 def train_test_sets(df_processed: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -125,16 +118,18 @@ def objective(trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.Da
     # Define the hyperparameters to optimize
     params = {
         'criterion': trial.suggest_categorical("criterion", ["squared_error"]),
-        'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=100),
-        'max_depth': trial.suggest_int('max_depth', 1, 10),
-        'min_samples_split': trial.suggest_int('min_samples_split', 1, 4),
+        'n_estimators': trial.suggest_int('n_estimators', 10, 50),
+        'max_depth': trial.suggest_int('max_depth', 1, 20),
+        'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 50)
     }
+    # MLFLOW.log_params(params)
 
     # Create a RandomForestRegressor with the suggested hyperparameters
     model = RandomForestRegressor(random_state=42, **params)
 
-    train(model,X_train,y_train,X_test,y_test)
+    rmse = train(model, X_train, y_train, X_test, y_test)
+    return rmse
 
 
 def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
@@ -158,12 +153,15 @@ def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFram
         study = optuna.create_study(direction='minimize')
 
         # Optimize the objective function
-        study.optimize(lambda trial: objective(
-            trial, X_train, y_train, X_test, y_test), n_trials=2)
+        try:
+            study.optimize(lambda trial: objective(
+                trial, X_train, y_train, X_test, y_test), n_trials=2)
 
-        # Print the best hyperparameters and best score
-        MLFLOW.log_params("Best Hyperparameters:", study.best_params)
-        MLFLOW.log_metrics("Best Score:", study.best_value)
+            # Print the best hyperparameters and best score
+            MLFLOW.log_params(study.best_trial.params)
+            MLFLOW.log_metric(study.best_trial.value)
+        except Exception as e:
+            traceback.print_exc()
 
 
 def main() -> None:
@@ -181,7 +179,7 @@ def main() -> None:
     X_train, X_test, y_train, y_test = train_test_sets(df_processed)
     print('Start training')
     # train(RandomForestRegressor(random_state=42,criterion='squared_error', max_depth=1),X_train, y_train, X_test, y_test)
-    
+
     # console.print('Training completed\n', style='bold green')
 
     console.print('Running Optuna\n')
