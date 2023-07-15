@@ -14,6 +14,8 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline, make_pipeline
 
+import logging
+
 YEAR = 2021
 MONTH = 1
 COLOUR = "yellow"
@@ -116,20 +118,42 @@ def train_test_sets(df_processed: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFr
 
 def objective(trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
     # Define the hyperparameters to optimize
-    params = {
-        'criterion': trial.suggest_categorical("criterion", ["squared_error"]),
-        'n_estimators': trial.suggest_int('n_estimators', 10, 50),
-        'max_depth': trial.suggest_int('max_depth', 1, 20),
-        'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 50)
-    }
-    # MLFLOW.log_params(params)
 
-    # Create a RandomForestRegressor with the suggested hyperparameters
-    model = RandomForestRegressor(random_state=42, **params)
+    with MLFLOW.start_run():
+        tags = {
+            'model': 'Random Forest Regressor',
+            'developer': 'Victor Matekole',
+            'dataset': f'{COLOUR}-taxi',
+            'year': YEAR,
+            'month': MONTH,
+            'features': FEATURES,
+            'target': TARGET
+        }
+        MLFLOW.set_tags(tags)
 
-    rmse = train(model, X_train, y_train, X_test, y_test)
-    return rmse
+        params = {
+            'criterion': trial.suggest_categorical('criterion', ['squared_error']),
+            'n_estimators': trial.suggest_int('n_estimators', 10, 50),
+            'max_depth': trial.suggest_int('max_depth', 1, 20),
+            'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
+            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 50)
+        }
+        # MLFLOW.log_params(params)
+
+        # Create a RandomForestRegressor with the suggested hyperparameters
+        model = RandomForestRegressor(random_state=42, **params)
+
+        rmse = train(model, X_train, y_train, X_test, y_test)
+
+        # Print the best hyperparameters and best score
+        MLFLOW.log_params(params)
+        MLFLOW.log_metric('rmse',rmse)
+        # Add a description to the best model
+
+        return rmse
+
+        
+     
 
 
 def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
@@ -137,35 +161,26 @@ def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFram
     exp_name = 'optuna-runs'
     MLFLOW.set_experiment(exp_name)
 
-    with MLFLOW.start_run():
-        tags = {
-            "model": "Random Forest Regressor",
-            "developer": "Victor Matekole",
-            "dataset": f"{COLOUR}-taxi",
-            "year": YEAR,
-            "month": MONTH,
-            "features": FEATURES,
-            "target": TARGET
-        }
-        MLFLOW.set_tags(tags)
+   
+    # Create an Optuna study object
+    study = optuna.create_study(direction='minimize')
 
-        # Create an Optuna study object
-        study = optuna.create_study(direction='minimize')
+    # Optimize the objective function
+    try:
+        study.optimize(lambda trial: objective(
+            trial, X_train, y_train, X_test, y_test), n_trials=20)
 
-        # Optimize the objective function
-        try:
-            study.optimize(lambda trial: objective(
-                trial, X_train, y_train, X_test, y_test), n_trials=2)
-
-            # Print the best hyperparameters and best score
-            MLFLOW.log_params(study.best_trial.params)
-            MLFLOW.log_metric(study.best_trial.value)
-        except Exception as e:
-            traceback.print_exc()
+        # Print the best hyperparameters and best score
+        # TODO: Attach best model and put into production
+        MLFLOW.log_params(study.best_trial.params)
+        MLFLOW.log_metric('rmse',study.best_trial.value)
+    except Exception as e:
+        traceback.print_exc()
 
 
 def main() -> None:
     init()
+    logging.getLogger("mlflow").setLevel(logging.DEBUG)
     console = Console()
     print('Loading data :smiley: \n')
     df_raw = load_data()
