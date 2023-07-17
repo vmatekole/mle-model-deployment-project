@@ -54,5 +54,6 @@ def predict_durations_to_bigquery(data: list[TaxiRide]):
     df_predictions = pd.DataFrame([prediction.dict() for prediction in predictions])
     df_predictions.to_gbq('taxi_predictions.predictions',
                           'composed-hold-390914', if_exists='append')
-
+    
+    return {"message": "Successfully uploaded"}
 
