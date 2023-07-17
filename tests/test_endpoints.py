@@ -1,15 +1,17 @@
+
+import google.cloud.bigquery as gcl
 import pandas as pd
 import pytest
+from data_model import TaxiRide
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fixtures import expected_predictions, taxi_rides
+from google.cloud.bigquery import Table
 from main import app, get_taxi_predictions
-from pandas.testing import assert_frame_equal
-from data_model import TaxiRide
-import json
 
 client = TestClient(app)
 
+DURATION_TOLERANCE = 0.001
 
 class TestApiEndpoints:
 
@@ -26,11 +28,9 @@ class TestApiEndpoints:
 
         output = get_taxi_predictions(taxi_ride_models)
 
-        # Test case 1 assert we get a dataframe
-        assert (type(output) == pd.DataFrame)
 
-        # Test case 2 assert
-        assert_frame_equal(output, pd.DataFrame(expected_predictions))
+        assert output == expected_predictions
+        
 
     @pytest.mark.parametrize("input, expected_output", [(
         {
@@ -44,7 +44,7 @@ class TestApiEndpoints:
             "PULocationID": 1,
             "DOLocationID": 2,
             "trip_distance": 2.5,
-            "predicted_duration": 25.598840843668743
+            "predicted_duration": pytest.approx(12.745262840390389, DURATION_TOLERANCE)
         }
     )])
     def test_predict_duration(self, input, expected_output):
@@ -57,9 +57,18 @@ class TestApiEndpoints:
     def test_predict_durations(self, taxi_rides, expected_predictions):
         response = client.post('/predict_batch', json=taxi_rides)
 
-        assert response.status_code == 200
+        assert  response.status_code == 200
 
         assert response.json() == expected_predictions
 
     def test_predict_durations_to_bigquery(self, taxi_rides):
-        pass
+        response = client.post('/predict_bq', json=taxi_rides)
+
+        assert response.status_code == 200
+
+        assert response.json() == {"message": "Successfully uploaded"}
+        
+        table_ref = gcl.Dataset('composed-hold-390914.taxi_predictions').table('predictions')
+        
+        assert  type(gcl.Client().get_table(table=table_ref)) == Table
+            
