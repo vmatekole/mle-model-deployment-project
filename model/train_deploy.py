@@ -1,3 +1,4 @@
+import logging
 import os
 import traceback
 from typing import Tuple
@@ -6,6 +7,7 @@ import mlflow
 import optuna
 import pandas as pd
 from dotenv import load_dotenv
+from optuna.trial import Trial
 from rich import print
 from rich.console import Console
 from sklearn.ensemble import RandomForestRegressor
@@ -13,8 +15,6 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline, make_pipeline
-
-import logging
 
 YEAR = 2021
 MONTH = 1
@@ -63,22 +63,6 @@ def train(model, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFr
     X_train = X_train.to_dict(orient="records")
     X_test = X_test.to_dict(orient="records")
 
-    # Setup the MLflow experiment
-    # exp_name = 'yellow-taxi-trip-duration'
-    # MLFLOW.set_experiment(exp_name)
-
-    # with MLFLOW.start_run():
-    #     tags = {
-    #         "model": "Random Forest Regressor",
-    #         "developer": "Victor Matekole",
-    #         "dataset": f"{COLOUR}-taxi",
-    #         "year": YEAR,
-    #         "month": MONTH,
-    #         "features": FEATURES,
-    #         "target": TARGET
-    #     }
-    #     MLFLOW.set_tags(tags)
-
     pipeline = make_pipeline(
         DictVectorizer(),
         model
@@ -116,7 +100,7 @@ def train_test_sets(df_processed: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFr
 # Define the objective function for optimization
 
 
-def objective(trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
+def objective(trial: Trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
     # Define the hyperparameters to optimize
 
     with MLFLOW.start_run():
@@ -138,7 +122,6 @@ def objective(trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.Da
             'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
             'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 50)
         }
-        # MLFLOW.log_params(params)
 
         # Create a RandomForestRegressor with the suggested hyperparameters
         model = RandomForestRegressor(random_state=42, **params)
@@ -148,7 +131,7 @@ def objective(trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.Da
         # Print the best hyperparameters and best score
         MLFLOW.log_params(params)
         MLFLOW.log_metric('rmse',rmse)
-        # Add a description to the best model
+        MLFLOW.log_param('Description', trial.study.study_name)
 
         return rmse
 
@@ -168,10 +151,19 @@ def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFram
     # Optimize the objective function
     try:
         study.optimize(lambda trial: objective(
-            trial, X_train, y_train, X_test, y_test), n_trials=20)
+            trial, X_train, y_train, X_test, y_test), n_trials=2)
 
-        # Print the best hyperparameters and best score
-        # TODO: Attach best model and put into production
+        # Get the best trial and log it to MLFLOW
+        experiment_id = mlflow.get_experiment_by_name(exp_name).experiment_id
+
+        # Let's log details of the best trial
+        runs = mlflow.search_runs(experiment_ids=[experiment_id], order_by=[f"metrics.rmse ASC"])
+
+        # Get the ID of the best trial (first row after sorting)
+        best_trial_id = runs.iloc[0].run_id
+        best_trial_model = mlflow.sklearn.load_model(f"runs:/{best_trial_id}/model")
+        
+        MLFLOW.sklearn.log_model(best_trial_model,'model')
         MLFLOW.log_params(study.best_trial.params)
         MLFLOW.log_metric('rmse',study.best_trial.value)
     except Exception as e:
