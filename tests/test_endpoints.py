@@ -5,13 +5,12 @@ import pytest
 from data_model import TaxiRide
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from fixtures import expected_predictions, taxi_rides
+from fixtures import expected_predictions, taxi_rides, DURATION_TOLERANCE
 from google.cloud.bigquery import Table
 from main import app, get_taxi_predictions
 
 client = TestClient(app)
 
-DURATION_TOLERANCE = 0.001
 
 class TestApiEndpoints:
 
@@ -28,9 +27,7 @@ class TestApiEndpoints:
 
         output = get_taxi_predictions(taxi_ride_models)
 
-
         assert output == expected_predictions
-        
 
     @pytest.mark.parametrize("input, expected_output", [(
         {
@@ -44,7 +41,7 @@ class TestApiEndpoints:
             "PULocationID": 1,
             "DOLocationID": 2,
             "trip_distance": 2.5,
-            "predicted_duration": pytest.approx(12.745262840390389, DURATION_TOLERANCE)
+            "predicted_duration": pytest.approx(12.745262840390389, abs=DURATION_TOLERANCE)
         }
     )])
     def test_predict_duration(self, input, expected_output):
@@ -57,7 +54,7 @@ class TestApiEndpoints:
     def test_predict_durations(self, taxi_rides, expected_predictions):
         response = client.post('/predict_batch', json=taxi_rides)
 
-        assert  response.status_code == 200
+        assert response.status_code == 200
 
         assert response.json() == expected_predictions
 
@@ -67,8 +64,8 @@ class TestApiEndpoints:
         assert response.status_code == 200
 
         assert response.json() == {"message": "Successfully uploaded"}
-        
-        table_ref = gcl.Dataset('composed-hold-390914.taxi_predictions').table('predictions')
-        
-        assert  type(gcl.Client().get_table(table=table_ref)) == Table
-            
+
+        table_ref = gcl.Dataset(
+            'composed-hold-390914.taxi_predictions').table('predictions')
+
+        assert type(gcl.Client().get_table(table=table_ref)) == Table

@@ -24,8 +24,10 @@ class TestDirectionalBehaviour:
         }))])
     def test_direction(self, long_ride: dict[str, int, int], short_ride: dict[str, int, int]) -> None:
 
-        directional_examples = [prepare_features(ride) for ride in [long_ride, short_ride]]
+        directional_examples = [prepare_features(ride) for ride in [
+            long_ride, short_ride]]
 
         directional_predictions = MODEL.predict(directional_examples)
         # Test case 1 check that predicted duration is longer for short rides vs long rides
-        assert np.where(directional_predictions[0] > directional_predictions[1])
+        assert np.where(
+            directional_predictions[0] > directional_predictions[1])

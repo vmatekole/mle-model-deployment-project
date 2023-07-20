@@ -13,8 +13,8 @@ from rich.console import Console
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
 
 YEAR = 2021
 MONTH = 1
@@ -77,6 +77,7 @@ def train(model, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFr
     MLFLOW.sklearn.log_model(pipeline, "model")
     return rmse
 
+
 def init():
     load_dotenv()
 
@@ -130,13 +131,10 @@ def objective(trial: Trial, X_train: pd.DataFrame, y_train: pd.DataFrame, X_test
 
         # Print the best hyperparameters and best score
         MLFLOW.log_params(params)
-        MLFLOW.log_metric('rmse',rmse)
+        MLFLOW.log_metric('rmse', rmse)
         MLFLOW.log_param('Description', trial.study.study_name)
 
         return rmse
-
-        
-     
 
 
 def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame):
@@ -144,28 +142,29 @@ def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFram
     exp_name = 'optuna-runs'
     MLFLOW.set_experiment(exp_name)
 
-   
     # Create an Optuna study object
     study = optuna.create_study(direction='minimize')
 
     # Optimize the objective function
     try:
         study.optimize(lambda trial: objective(
-            trial, X_train, y_train, X_test, y_test), n_trials=2)
+            trial, X_train, y_train, X_test, y_test), n_trials=20)
 
         # Get the best trial and log it to MLFLOW
         experiment_id = mlflow.get_experiment_by_name(exp_name).experiment_id
 
         # Let's log details of the best trial
-        runs = mlflow.search_runs(experiment_ids=[experiment_id], order_by=[f"metrics.rmse ASC"])
+        runs = mlflow.search_runs(
+            experiment_ids=[experiment_id], order_by=[f"metrics.rmse ASC"])
 
         # Get the ID of the best trial (first row after sorting)
         best_trial_id = runs.iloc[0].run_id
-        best_trial_model = mlflow.sklearn.load_model(f"runs:/{best_trial_id}/model")
-        
-        MLFLOW.sklearn.log_model(best_trial_model,'model')
+        best_trial_model = mlflow.sklearn.load_model(
+            f"runs:/{best_trial_id}/model")
+
+        MLFLOW.sklearn.log_model(best_trial_model, 'model')
         MLFLOW.log_params(study.best_trial.params)
-        MLFLOW.log_metric('rmse',study.best_trial.value)
+        MLFLOW.log_metric('rmse', study.best_trial.value)
     except Exception as e:
         traceback.print_exc()
 
@@ -173,6 +172,7 @@ def run_optuna(X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFram
 def main() -> None:
     init()
     logging.getLogger("mlflow").setLevel(logging.DEBUG)
+    
     console = Console()
     print('Loading data :smiley: \n')
     df_raw = load_data()
@@ -185,9 +185,6 @@ def main() -> None:
 
     X_train, X_test, y_train, y_test = train_test_sets(df_processed)
     print('Start training')
-    # train(RandomForestRegressor(random_state=42,criterion='squared_error', max_depth=1),X_train, y_train, X_test, y_test)
-
-    # console.print('Training completed\n', style='bold green')
 
     console.print('Running Optuna\n')
     run_optuna(X_train, y_train, X_test, y_test)

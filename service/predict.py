@@ -1,5 +1,6 @@
 import mlflow
 
+
 def prepare_features(ride):
     features = {}
     features['trip_route'] = f"{ride.PULocationID}_{ride.DOLocationID}"
