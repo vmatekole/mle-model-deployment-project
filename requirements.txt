@@ -1,0 +1,13 @@
+pydantic
+fastapi
+mlflow==2.4
+uvicorn
+jupyter
+python-dotenv
+google-cloud-storage
+scikit-learn==1.2.2
+scipy==1.11.0
+packaging==23.0
+numpy==1.24.4
+pandas-gbq
+# psutil==5.9.0
